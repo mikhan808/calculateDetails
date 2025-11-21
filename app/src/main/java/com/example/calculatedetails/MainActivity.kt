@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,9 +35,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
@@ -47,6 +48,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.calculatedetails.ui.theme.CalculateDetailsTheme
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private const val DEFAULT_SHEET_WIDTH = 300
 private val SHEET_WIDTH_KEY = intPreferencesKey("sheet_width")
@@ -103,10 +105,14 @@ fun SheetCalculatorScreen(
     var countInput by rememberSaveable { mutableStateOf("") }
     val details = remember { mutableStateListOf<PartDetail>() }
     var calculationResult by remember { mutableStateOf<List<SheetAllocation>>(emptyList()) }
+    var calculationWidth by remember { mutableStateOf(sheetWidth) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(sheetWidth) {
         widthInput = sheetWidth.toString()
+        if (calculationResult.isEmpty()) {
+            calculationWidth = sheetWidth
+        }
     }
 
     val scrollState = rememberScrollState()
@@ -169,7 +175,7 @@ fun SheetCalculatorScreen(
                 },
                 modifier = Modifier
                     .weight(1f),
-                label = { Text("Длина, см") },
+                label = { Text("Ширина, см") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true
             )
@@ -194,7 +200,7 @@ fun SheetCalculatorScreen(
                 val length = lengthInput.toIntOrNull()
                 val count = countInput.toIntOrNull()
                 when {
-                    length == null || length <= 0 -> errorMessage = "Введите длину детали больше нуля."
+                    length == null || length <= 0 -> errorMessage = "Введите ширину детали больше нуля."
                     count == null || count <= 0 -> errorMessage = "Введите количество деталей больше нуля."
                     else -> {
                         errorMessage = null
@@ -244,22 +250,35 @@ fun SheetCalculatorScreen(
             }
         }
 
+        val activeWidthText = widthInput.ifBlank { sheetWidth.toString() }
+        Text(
+            text = "Текущая ширина для расчёта: $activeWidthText см",
+            style = MaterialTheme.typography.bodyMedium
+        )
+
         Button(
             onClick = {
+                val widthFromInput = widthInput.toIntOrNull()
+                val effectiveWidth = widthFromInput ?: sheetWidth
                 when {
-                    sheetWidth <= 0 -> errorMessage = "Сначала задайте ширину листа."
+                    widthFromInput != null && widthFromInput <= 0 -> {
+                        errorMessage = "Введите ширину листа больше нуля."
+                        calculationResult = emptyList()
+                    }
+                    effectiveWidth <= 0 -> errorMessage = "Сначала задайте ширину листа."
                     details.isEmpty() -> errorMessage = "Добавьте хотя бы одну деталь."
                     else -> {
-                        val invalidDetail = details.firstOrNull { it.length > sheetWidth }
+                        val invalidDetail = details.firstOrNull { it.length > effectiveWidth }
                         if (invalidDetail != null) {
                             errorMessage =
-                                "Деталь ${invalidDetail.length} см не помещается в лист шириной $sheetWidth см."
+                                "Деталь ${invalidDetail.length} см не помещается в лист шириной $effectiveWidth см."
                             calculationResult = emptyList()
                         } else {
                             calculationResult = calculateSheetAllocations(
-                                sheetWidth = sheetWidth,
+                                sheetWidth = effectiveWidth,
                                 parts = details.toList()
                             )
+                            calculationWidth = effectiveWidth
                             errorMessage = null
                         }
                     }
@@ -283,6 +302,10 @@ fun SheetCalculatorScreen(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
+            Text(
+                text = "Ширина листа в расчёте: $calculationWidth см",
+                style = MaterialTheme.typography.bodyMedium
+            )
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 calculationResult.forEach { sheet ->
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -299,6 +322,10 @@ fun SheetCalculatorScreen(
                             sheet.details.forEach { detail ->
                                 Text("${detail.length} см — ${detail.count} шт.")
                             }
+                            SheetVisualization(
+                                usedWidth = calculationWidth - sheet.remaining,
+                                totalWidth = calculationWidth
+                            )
                             Text(
                                 text = "Остаток: ${sheet.remaining} см",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -310,6 +337,29 @@ fun SheetCalculatorScreen(
             }
         }
     }
+}
+
+@Composable
+private fun SheetVisualization(
+    usedWidth: Int,
+    totalWidth: Int,
+    modifier: Modifier = Modifier
+) {
+    if (totalWidth <= 0) return
+    val segments = 20
+    val normalizedUsed = usedWidth.coerceIn(0, totalWidth)
+    val filledSegments = ((normalizedUsed / totalWidth.toFloat()) * segments)
+        .roundToInt()
+        .coerceIn(0, segments)
+    val builder = StringBuilder(segments)
+    repeat(filledSegments) { builder.append('▮') }
+    repeat(segments - filledSegments) { builder.append('▯') }
+    Text(
+        text = builder.toString(),
+        fontFamily = FontFamily.Monospace,
+        style = MaterialTheme.typography.bodyLarge,
+        modifier = modifier
+    )
 }
 
 @Composable
