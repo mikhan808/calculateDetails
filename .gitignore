@@ -13,8 +13,9 @@
 .externalNativeBuild
 .cxx
 local.properties
-/.idea/AndroidProjectSystem.xml
 /.idea/.gitignore
+/.github/workflows/android-ci.yml
+/.idea/AndroidProjectSystem.xml
 /.idea/gradle.xml
 /gradle/wrapper/gradle-wrapper.jar
 /gradlew
